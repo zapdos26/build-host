@@ -54,7 +54,10 @@ DEB_RE = re.compile(
     r"""(?xi)^.*(?P<ver>\d+\.\d+\.\d+)-(?P<distro>[a-z0-9.]+)(?:~[0-9a-z]+)?_(?P<arch>amd64|arm64)\.deb$"""
 )
 RPM_RE = re.compile(
-    r"""(?xi).*\.(?P<arch>x86_64|aarch64|noarch)-(?P<distro>fedora\d+|rawhide|rocky\d+|leap\d+(?:\.\d+)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+)\.rpm$"""
+    r"""(?xi).*\.(?P<arch>x86_64|aarch64)-(?P<distro>fedora\d+|rawhide|rocky\d+|leap\d+(?:\.\d+)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+)\.rpm$"""
+)
+RPM_NOARCH_RE = re.compile(
+    r"""(?xi).*\.(?P<arch>noarch)-(?P<distro>fedora\d+|rawhide|rocky\d+|leap\d+(?:\.\d+)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+)\.rpm$"""
 )
 
 GPG_KEYID = os.environ.get("HBL_GPG_KEYID")
@@ -275,14 +278,16 @@ def parse_artifact(p: Path) -> Tuple[str, Optional[str]]:
             return ("deb", distro)
         return ("deb", "unknown")
     if nl.endswith(".rpm"):
+        if RPM_NOARCH_RE.match(nl):
+            log(f"WARN: ignoring unsupported noarch RPM artifact: {p.name}")
+            return ("other", None)
         m = RPM_RE.match(nl)
         if m:
             distro = m.group("distro")
             arch = m.group("arch")
             # aarch64 packages go to a separate "<distro>-aarch64" directory
-            # to avoid mixed-arch repos. noarch and x86_64 (primary-arch)
-            # packages use the plain "<distro>" directory, preserving
-            # existing repo URLs.
+            # to avoid mixed-arch repos. x86_64 packages use the plain
+            # "<distro>" directory, preserving existing repo URLs.
             if arch == "aarch64":
                 return ("rpm", f"{distro}-aarch64")
             return ("rpm", distro)
@@ -755,8 +760,7 @@ def published_has_pkgs(base: Path, t: str) -> bool:
         return d.is_dir() and any(d.glob(pattern))
     else:
         # aarch64 packages live in a separate "<distro>-aarch64" directory.
-        # All other arches (x86_64, noarch) use the plain "<distro>"
-        # directory.
+        # x86_64 packages use the plain "<distro>" directory.
         if is_arm64:
             d = base / "rpm" / f"{distro}-aarch64"
         else:
