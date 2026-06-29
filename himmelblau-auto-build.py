@@ -279,8 +279,12 @@ def parse_artifact(p: Path) -> Tuple[str, Optional[str]]:
         if m:
             distro = m.group("distro")
             arch = m.group("arch")
+            # aarch64 packages go to a separate "<distro>-aarch64" directory
+            # to avoid mixed-arch repos. noarch and x86_64 (primary-arch)
+            # packages use the plain "<distro>" directory, preserving
+            # existing repo URLs.
             if arch == "aarch64":
-                return ("rpm", f"{distro}-arm64")
+                return ("rpm", f"{distro}-aarch64")
             return ("rpm", distro)
         return ("rpm", "unknown")
     if nl.endswith((".spdx", "sbom.json", ".cdx.json", ".spdx.json")):
@@ -750,8 +754,11 @@ def published_has_pkgs(base: Path, t: str) -> bool:
             pattern = "*_amd64.deb"
         return d.is_dir() and any(d.glob(pattern))
     else:
+        # aarch64 packages live in a separate "<distro>-aarch64" directory.
+        # All other arches (x86_64, noarch) use the plain "<distro>"
+        # directory.
         if is_arm64:
-            d = base / "rpm" / f"{distro}-arm64"
+            d = base / "rpm" / f"{distro}-aarch64"
         else:
             d = base / "rpm" / distro
         if not d.is_dir():
