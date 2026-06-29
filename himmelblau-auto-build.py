@@ -54,7 +54,7 @@ DEB_RE = re.compile(
     r"""(?xi)^.*(?P<ver>\d+\.\d+\.\d+)-(?P<distro>[a-z0-9.]+)(?:~[0-9a-z]+)?_(?P<arch>amd64|arm64)\.deb$"""
 )
 RPM_RE = re.compile(
-    r"""(?xi).*\. (?P<arch>x86_64|aarch64|noarch) - (?P<distro>fedora\d+|rawhide|rocky\d+|leap\d(?:\.\d)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+) \.rpm$"""
+    r"""(?xi).*\.(?P<arch>x86_64|aarch64|noarch)-(?P<distro>fedora\d+|rawhide|rocky\d+|leap\d+(?:\.\d+)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+)\.rpm$"""
 )
 
 GPG_KEYID = os.environ.get("HBL_GPG_KEYID")
@@ -764,10 +764,9 @@ def published_has_pkgs(base: Path, t: str) -> bool:
         if not d.is_dir():
             return False
 
-        # Support both known RPM naming styles:
-        #   <name>.<arch>.rpm
-        #   <name>.<arch>-<distro>.rpm
-        patterns = ("*.aarch64.rpm", "*aarch64-*.rpm") if is_arm64 else ("*.x86_64.rpm", "*x86_64-*.rpm")
+        # RPM naming: <name>-<ver>-<rel>.<arch>-<distro>.rpm
+        # e.g. himmelblau-4.0.0-1.x86_64-rocky9.rpm
+        patterns = ("*.aarch64-*.rpm",) if is_arm64 else ("*.x86_64-*.rpm",)
         for pattern in patterns:
             if any(d.glob(pattern)):
                 return True
