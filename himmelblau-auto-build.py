@@ -54,7 +54,10 @@ DEB_RE = re.compile(
     r"""(?xi)^.*(?P<ver>\d+\.\d+\.\d+)-(?P<distro>[a-z0-9.]+)(?:~[0-9a-z]+)?_(?P<arch>amd64|arm64)\.deb$"""
 )
 RPM_RE = re.compile(
-    r"""(?xi).*- (?P<distro>fedora\d+|rawhide|rocky\d+|leap\d(?:\.\d)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+) \.rpm$"""
+    r"""(?xi).*\.(?P<arch>x86_64|aarch64)-(?P<distro>fedora\d+|rawhide|rocky\d+|leap\d+(?:\.\d+)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+)\.rpm$"""
+)
+RPM_NOARCH_RE = re.compile(
+    r"""(?xi).*\.(?P<arch>noarch)-(?P<distro>fedora\d+|rawhide|rocky\d+|leap\d+(?:\.\d+)?|tumbleweed|sle\d+sp\d+|sle\d{2}|amzn\d+)\.rpm$"""
 )
 
 GPG_KEYID = os.environ.get("HBL_GPG_KEYID")
@@ -275,8 +278,20 @@ def parse_artifact(p: Path) -> Tuple[str, Optional[str]]:
             return ("deb", distro)
         return ("deb", "unknown")
     if nl.endswith(".rpm"):
+        if RPM_NOARCH_RE.match(nl):
+            log(f"WARN: ignoring unsupported noarch RPM artifact: {p.name}")
+            return ("other", None)
         m = RPM_RE.match(nl)
-        return ("rpm", m.group("distro") if m else "unknown")
+        if m:
+            distro = m.group("distro")
+            arch = m.group("arch")
+            # aarch64 packages go to a separate "<distro>-aarch64" directory
+            # to avoid mixed-arch repos. x86_64 packages use the plain
+            # "<distro>" directory, preserving existing repo URLs.
+            if arch == "aarch64":
+                return ("rpm", f"{distro}-aarch64")
+            return ("rpm", distro)
+        return ("rpm", "unknown")
     if nl.endswith((".spdx", "sbom.json", ".cdx.json", ".spdx.json")):
         return ("sbom", None)
     return ("other", None)
@@ -744,14 +759,18 @@ def published_has_pkgs(base: Path, t: str) -> bool:
             pattern = "*_amd64.deb"
         return d.is_dir() and any(d.glob(pattern))
     else:
-        d = base / "rpm" / distro
+        # aarch64 packages live in a separate "<distro>-aarch64" directory.
+        # x86_64 packages use the plain "<distro>" directory.
+        if is_arm64:
+            d = base / "rpm" / f"{distro}-aarch64"
+        else:
+            d = base / "rpm" / distro
         if not d.is_dir():
             return False
 
-        # Support both known RPM naming styles:
-        #   <name>.<arch>.rpm
-        #   <name>.<arch>-<distro>.rpm
-        patterns = ("*.aarch64.rpm", "*aarch64-*.rpm") if is_arm64 else ("*.x86_64.rpm", "*x86_64-*.rpm")
+        # RPM naming: <name>-<ver>-<rel>.<arch>-<distro>.rpm
+        # e.g. himmelblau-4.0.0-1.x86_64-rocky9.rpm
+        patterns = ("*.aarch64-*.rpm",) if is_arm64 else ("*.x86_64-*.rpm",)
         for pattern in patterns:
             if any(d.glob(pattern)):
                 return True
